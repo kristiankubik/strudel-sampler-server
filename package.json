@@ -1,0 +1,12 @@
+{
+  "name": "algorave",
+  "version": "0.0.1",
+  "description": "Algorhytmic music for the neurodivergent masses",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
