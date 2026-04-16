@@ -1,6 +1,7 @@
 # Logs
 logs
 *.log
+**/*/*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -137,3 +138,50 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Ignore local config overrides
+**/*/*.local.*
+**/*/*.local
+
+
+# OS generated files #
+######################
+.DS_Store
+*.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+.directory
+
+# Tool specific files #
+#######################
+# Vim
+*~
+*.swp
+*.swo
+# Sublime Text & TextMate
+*.sublime-*
+*.stTheme.cache
+*.tmlanguage.cache
+*.tmPreferences.cache
+# Eclipse
+.settings/
+# JetBrains aka PhpStorm
+.idea/
+# NetBeans
+nbproject/
+# Visual Studio Code
+.vscode/
+.history
+
+# agentic
+.claude
+
+
+samples
+tracks
+temp

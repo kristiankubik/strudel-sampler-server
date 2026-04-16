@@ -1,0 +1,1232 @@
+// Prebake script
+//
+// This is code that is loaded before your pattern is run.
+// You can use it to define custom functions to use in any pattern.
+//
+// This is an initial example script. You can edit it to add
+// your own funtions.
+//
+// To use a script shared by some other user you can use
+// the import-button or paste the script in this editor.
+
+const ratchet = register("ratchet", (pat) => pat.sometimes(ply(2)));
+
+// original from github.com/switchangel
+// https://raw.githubusercontent.com/switchangel/strudel-scripts/refs/heads/main/prebake.strudel
+
+//TODO: find a better way to do this
+window.registerFunc = (name, func) => {
+    //ensures it will work in mondo notation
+    strudelScope[name] = func;
+    //ensures it will work in mini notation
+    window[name] = func;
+};
+
+register("pg", (pgain, x) => {
+    return x.mul(postgain(pgain));
+});
+
+window.DX = (env = 8, fm = 2, harm = 2) => s("sine").fm(fm).fmenv(env).fmh(harm).fmdecay(0.2);
+
+// tb303 style filter envelope control between 0 & 1 values for useful range
+register("acidenv", (x, pat) =>
+    pat
+        .lpf(100)
+        .lpenv(x * 9)
+        .lps(0.2)
+        .lpd(0.12)
+        .lpq(2),
+);
+
+setGainCurve((x) => Math.pow(x, 2));
+
+window.soloedOrbits = [];
+window.soloOrbit = (...orbits) => {
+    window.soloedOrbits = orbits;
+};
+window.mutedOrbits = [];
+window.solo = (...orbits) => {
+    window.soloedOrbits = orbits;
+};
+window.mute = (...orbits) => {
+    window.mutedOrbits = orbits;
+};
+register("o", (orbit, pat) => {
+    pat = pat.orbit(orbit);
+    if (mutedOrbits.includes(orbit)) {
+        return pat.hush();
+    }
+    if (!soloedOrbits.length || soloedOrbits.includes(orbit)) {
+        return pat;
+    }
+    return pat.hush();
+});
+
+Pattern.prototype.col = function (col) {
+    const colors = ["#50d1f8", "#8EDF5F", "#995CD0", "#EC7744", "#5549B7", "#201D30"];
+    if (typeof col === "number") {
+        // if (col === 0) {
+        //   return this
+        // }
+        // col = col - 1
+        col = colors[col % colors.length];
+    }
+    return this.color(col);
+};
+
+window.CUE = "0";
+
+window.cue = function (...inp) {
+    const index = Math.min(window.CUE, inp.length - 1);
+
+    return reify(inp[index]).col(index);
+};
+window.getCue = () => window.CUE;
+window.setCue = function (cue) {
+    window.CUE = reify(cue);
+};
+Pattern.prototype.cue = function (cues, cb) {
+    cues = reify(cues);
+
+    return window.getCue().innerBind((c) => {
+        return cues.innerBind((cues) => {
+            cues = [cues].flat();
+            if (cues.includes(c)) {
+                return cb?.(this).col(c) ?? this.col(c);
+            } else if (cb == null) {
+                return silence;
+            }
+
+            return this.col(c);
+        });
+    });
+};
+
+Pattern.prototype.oncue = function (cues, cb) {
+    cues = reify(cues);
+    return window.getCue().innerBind((c) => {
+        return cues.innerBind((cues) => {
+            cues = [cues].flat();
+            if (!cues.includes(c)) {
+                return this;
+            }
+            return cb(this.col(c));
+        });
+    });
+};
+
+register("accent", (accent, pat) => {
+    if (accent == 0) {
+        return pat;
+    }
+    return pat
+        .mul(velocity(1 + accent / 8))
+        .mul(lpenv(1 + accent / 5))
+        .lpd(0.13)
+        .lpa(0.01);
+});
+
+//tracker style arrangement
+window.track = function (...input) {
+    const patterns = input.shift();
+    let mods = Array.isArray(input.at(-1)) ? input.pop() : undefined;
+    if (input.length % 2 !== 0) {
+        throw new Error(
+            "Arrange needs a length paramter for each pattern (length, pattern, length, pattern)",
+        );
+    }
+    let sects = [];
+    let total = 0;
+    for (let i = 0; i < input.length; i += 2) {
+        let inp = [input.at(i)].flat();
+        let cycles = inp.at(0);
+        let start = inp.at(1) ?? 0;
+
+        total += cycles;
+
+        let cpat = input.at(i + 1).innerBind((str, pat) => {
+            const pats = [];
+            str.split(/-+/).forEach((val, index) => {
+                if (val == false) {
+                    return;
+                }
+                let newPat = patterns.at(index);
+                mods?.forEach(([mod, callback]) => {
+                    if (val != mod) {
+                        return;
+                    }
+                    newPat = callback(newPat);
+                });
+
+                pats.push(newPat);
+            });
+            return stack(...pats);
+        });
+
+        sects.push([cycles, cpat.ribbon(start, cycles).fast(cycles)]);
+    }
+    return stepcat(...sects).slow(total);
+};
+/**
+$: track(
+   [bd,     sd,     hat,    clap,    bass],
+ 2, "--------0------1-------1--------0",
+ 2, "1-------0------1-------D--------0",
+ 4, "1-------0------1-------1--------1",
+  [['D' ,(x) => x.delay(.5)]] //Optional modifiers
+)
+*/
+
+/**
+ * Quick Arrange
+ * Allows to arrange multiple patterns together over multiple cycles.
+ * Takes a variable number of arrays with two elements specifying the number of cycles and the pattern to use.
+ *
+ * @return {Pattern}
+ * @example
+ * ar(
+ *   4, "<c a f e>(3,8)",
+ *   2, "<g a>(5,8)"
+ * ).note()
+ */
+window.ar = function (...input) {
+    if (input.length % 2 !== 0) {
+        throw new Error(
+            "Arrange needs a length paramter for each pattern (length, pattern, length, pattern)",
+        );
+    }
+    let sects = [];
+    let total = 0;
+    for (let i = 0; i < input.length; i += 2) {
+        let inp = [input.at(i)].flat();
+        let cycles = inp.at(0);
+        let start = inp.at(1) ?? 0;
+        total += cycles;
+
+        let pattern = input.at(i + 1);
+        sects.push([cycles, pattern.ribbon(start, cycles).fast(cycles)]);
+    }
+    return stepcat(...sects).slow(total);
+};
+
+window.p = stack;
+
+window.blockArrange = function (patArr, modifiers = []) {
+    return stack(
+        ...patArr
+            .map(([pat, maskPat]) => {
+                pat = [pat].flat();
+
+                return maskPat
+                    .fmap((m) => {
+                        return stack(
+                            ...pat
+                                .map((p) => {
+                                    if (m == 0) {
+                                        return;
+                                    }
+                                    const ms = m.toString();
+                                    let newPat = p;
+
+                                    if (ms.includes("R")) {
+                                        newPat = newPat.restart(1);
+                                    }
+                                    if (ms.includes("B")) {
+                                        newPat = newPat.rev().speed(-1);
+                                    }
+                                    modifiers.forEach(([mod, callback]) => {
+                                        if (mod(ms)) {
+                                            newPat = callback(newPat);
+                                        }
+                                    });
+                                    return newPat;
+                                })
+                                .filter(Boolean),
+                        );
+                    })
+                    .innerJoin();
+            })
+            .flat(),
+    );
+};
+
+// example:
+// $: blockArrange(
+//     [
+//       [[bd],       "<F F F F F F F F F 0>"],
+//       [[bass],     "<0 0 F F F S F F F B>"],
+//       [[hat],      "<0 F F F F F F F F F>"],
+//     ],
+//     //ADD CUSTOM BINDINGS
+//     [[(m) => m.includes('S') , (x) => x.stretch(1)]]
+//   )._scope()
+
+// fill in gaps between events
+register("fill", function (pat) {
+    return new Pattern(function (state) {
+        const lookbothways = 1;
+        // Expand the query window
+        const haps = pat.query(
+            state.withSpan((span) => new TimeSpan(span.begin.sub(lookbothways), span.end.add(lookbothways))),
+        );
+        const onsets = haps
+            .map((hap) => hap.whole.begin)
+            // sort fractions
+            .sort((a, b) => a.compare(b))
+            // make unique
+            .filter((x, i, arr) => i == arr.length - 1 || x.ne(arr[i + 1]));
+        const newHaps = [];
+        for (const hap of haps) {
+            // Ingore if the part starts after the original query
+            if (hap.part.begin.gte(state.span.end)) {
+                continue;
+            }
+
+            // Find the next onset, to use as an offset
+            const next = onsets.find((onset) => onset.gte(hap.whole.end));
+
+            // If there is no next onset, the query window is not large enough.
+            // We bail out to avoid a crash.
+            if (next === undefined) {
+                continue;
+            }
+
+            // Ignore if the part ended before the original query, and hasn't expanded inside
+            if (next.lte(state.span.begin)) {
+                continue;
+            }
+
+            const whole = new TimeSpan(hap.whole.begin, next);
+            // Constrain part to original query
+            const part = new TimeSpan(hap.part.begin.max(state.span.begin), next.min(state.span.end));
+            newHaps.push(new Hap(whole, part, hap.value, hap.context, hap.stateful));
+        }
+        return newHaps;
+    });
+});
+
+register("trancegate", (density, seed, length, x) => {
+    density = reify(density).add(0.5);
+    return x.struct(rand.mul(density).round().seg(16).rib(seed, length)).fill().clip(0.7);
+});
+
+//Better trancegate
+register("tgate", (amt, cycle, length, pat) => {
+    const cycleSubstitute = new Map([
+        [0, 45],
+        [1, 116],
+        [2, 99],
+        [3, 100],
+        [4, 107],
+        [5, 53],
+        [6, 57],
+        [7, 58],
+        [8, 67],
+        [9, 81],
+        [10, 89],
+        [11, 115],
+        [12, 8],
+        [13, 118],
+        [14, 120],
+        [15, 144],
+        [16, 149],
+        [17, 161],
+        [18, 197],
+        [19, 206],
+        [20, 209],
+        [21, 230],
+        [22, 269],
+        [23, 274],
+        [24, 293],
+        [24, 295],
+        [25, 308],
+        [31, 37],
+        [32, 40],
+        [33, 59],
+        [34, 63],
+        [35, 65],
+        [36, 68],
+        [37, 70],
+        [37, 225],
+    ]);
+    cycle = reify(cycle).withValue((v) => {
+        return cycleSubstitute.get(v) ?? v;
+    });
+    amt = reify(amt);
+    return pat
+        .struct("x!16".degradeBy(amt.mul(-1).add(1)).rib(cycle, length))
+        .fill()
+        .clip(0.7);
+});
+
+//increasing the delay increases the feedback as well
+register("dly", (amt, x) => {
+    amt = reify(amt);
+    return x.delay(amt.mul(0.8)).delayfeedback(amt.pow(2)).mask(amt.floor().inv());
+});
+
+register("colorparty", (p, pat) => {
+    const colors = ["blue", "yellow", "violet", "green", "orange", "cyan", "magenta", "white"];
+    return pat.color(colors.at(Math.floor(p * colors.length)));
+});
+
+// quantize notes to given values: pat.grab("e:f#:c")
+register("grab", function (scale, pat) {
+    // Supports ':' list syntax in mininotation
+    scale = (Array.isArray(scale) ? scale.flat() : [scale]).flatMap((val) =>
+        typeof val === "number" ? val : noteToMidi(val) - 48,
+    );
+
+    return pat.withHap((hap) => {
+        const isObject = typeof hap.value === "object";
+        let note = isObject ? hap.value.n : hap.value;
+        if (typeof note === "number") {
+            note = note;
+        }
+        if (typeof note === "string") {
+            note = noteToMidi(note);
+        }
+
+        if (isObject) {
+            delete hap.value.n; // remove n so it won't cause trouble
+        }
+        const octave = (note / 12) >> 0;
+        const transpose = octave * 12;
+
+        const goal = note - transpose;
+        note =
+            scale.reduce((prev, curr) => {
+                return Math.abs(curr - goal) < Math.abs(prev - goal) ? curr : prev;
+            }) + transpose;
+
+        return hap.withValue(() => (isObject ? { ...hap.value, note } : note));
+    });
+});
+
+setDefault("gain", 1);
+
+// multi orbit pan for quad setups etc.
+// ex: s("bd!4").mpan("3:4", slider(0.761))
+register("mpan", (orbits, amount, pat) => {
+    const index = Math.round(amount * (orbits.length - 1));
+    const orbit = orbits[index];
+    const pamt = (amount * orbits.length) % 1;
+    return pat.orbit(orbit).pan(pamt);
+});
+
+// lpf between 0 and 1
+register("rlpf", (x, pat) => {
+    return pat.lpf(pure(x).mul(12).pow(4));
+});
+
+//hpf between 0 and 1
+register("rhpf", (x, pat) => {
+    return pat.hpf(pure(x).mul(12).pow(4));
+});
+
+//@title velocity structure @by Switch Angel
+register(
+    "vstruct",
+    (ipat, pat) => {
+        return ipat.outerBind((vel) => {
+            return pat.keepif.out(Math.ceil(vel)).velocity(vel);
+        });
+    },
+    false,
+);
+
+// sets my Ableton vocoder CC key to the specified value, probably only useful for me
+
+window.voc = (key) => {
+    let value;
+    switch (key.toLowerCase()) {
+        case "c":
+            value = 0;
+            break;
+        case "c#":
+            value = 0.2;
+            break;
+        case "d":
+            value = 0.25;
+            break;
+        case "d#":
+            value = 0.3;
+            break;
+        case "e":
+            value = 0.4;
+            break;
+        case "f":
+            value = 0.5;
+            break;
+        case "f#":
+            value = 0.6;
+            break;
+        case "g":
+            value = 0.7;
+            break;
+        case "g#":
+            value = 0.75;
+            break;
+        case "a":
+            value = 0.8;
+            break;
+        case "a#":
+            value = 0.9;
+            break;
+        case "b":
+            value = 1;
+            break;
+        default:
+            value = 0; // fallback value if key is not recognized
+    }
+
+    return s("white").gain(0).ccn(34).ccv(value).midi("tout");
+};
+register("voc", (key, x) => {
+    let value;
+    switch (key.toLowerCase()) {
+        case "c":
+            value = 0;
+            break;
+        case "c#":
+            value = 0.2;
+            break;
+        case "d":
+            value = 0.25;
+            break;
+        case "d#":
+            value = 0.3;
+            break;
+        case "e":
+            value = 0.4;
+            break;
+        case "f":
+            value = 0.5;
+            break;
+        case "f#":
+            value = 0.6;
+            break;
+        case "g":
+            value = 0.7;
+            break;
+        case "g#":
+            value = 0.75;
+            break;
+        case "a":
+            value = 0.8;
+            break;
+        case "a#":
+            value = 0.9;
+            break;
+        case "b":
+            value = 1;
+            break;
+        default:
+            value = 0; // fallback value if key is not recognized
+    }
+
+    return x.ccn(34).ccv(value).midi("tout");
+});
+
+register("fmtime", (start, length, pat) => {
+    let modu = time.mod(length).add(start);
+    return pat.fm(modu).fmh(modu);
+});
+
+window.irando = (ipat) => reify(ipat).fmap(_irand).outerJoin();
+
+window.randm = (division) => irand(division).div(16);
+window.pk = function (...args) {
+    const control = args.length > 2 ? args.pop() : 0;
+    return pick(args, control);
+};
+
+register("acid", (pat) => {
+    return pat.s("supersaw").detune(0.5).unison(1).lpf(100).lpsustain(0.2).lpd(0.2).lpenv(2).lpq(12);
+});
+
+//stext
+//transform text input into synthesis!
+register("stxt", (text, pat) => {
+    const RANGE = "range";
+    const SELECTION = "selection";
+
+    const params = {
+        lpf: {
+            type: RANGE,
+            val: [100, 3000],
+        },
+        room: {
+            type: RANGE,
+            val: [0, 1],
+        },
+        vib: {
+            type: RANGE,
+            val: [0, 16],
+        },
+        vibmod: {
+            type: RANGE,
+            val: [0, 0.3],
+        },
+        wt: {
+            type: RANGE,
+            val: [0, 1],
+        },
+        note: {
+            type: RANGE,
+            transform: (x) => Math.round(x),
+            val: [-12, 8],
+        },
+
+        wtrate: {
+            type: RANGE,
+            val: [0, 3],
+        },
+        wtdepth: {
+            type: RANGE,
+            val: [0, 1],
+        },
+
+        delay: {
+            type: RANGE,
+            val: [0, 1],
+        },
+
+        delaytime: {
+            type: RANGE,
+            val: [0, 0.66],
+        },
+
+        delayfeedback: {
+            type: RANGE,
+            val: [0, 0.6],
+        },
+
+        decay: {
+            type: RANGE,
+            val: [0.1, 1],
+        },
+
+        attack: {
+            type: RANGE,
+            val: [0, 0.1],
+        },
+
+        wtrate: {
+            type: RANGE,
+            val: [0, 5],
+        },
+
+        lpenv: {
+            type: RANGE,
+            val: [0, 8],
+        },
+
+        lpd: {
+            type: RANGE,
+            val: [0, 1],
+        },
+
+        lpa: {
+            type: RANGE,
+            val: [0, 0.5],
+        },
+
+        detune: {
+            type: RANGE,
+            val: [0, 0.8],
+        },
+
+        // penv: {
+        //   type: RANGE,
+        //   transform: x => Math.round(x),
+        //   val: [0, 48]
+        // },
+        // pdec: {
+        //   type: RANGE,
+        //   val: [0, .1]
+        // },
+
+        s: {
+            type: SELECTION,
+            val: [
+                "sawtooth",
+                "supersaw",
+                "wt_digital",
+                "wt_digital_bad_day",
+                "wt_digital_basique",
+                "wt_digital_echoes",
+                "sine",
+                "triangle",
+                "pulse",
+            ],
+        },
+    };
+    // Encode the text into a Uint8Array of UTF-8 bytes
+    const encoder = new TextEncoder("utf-8");
+    const utf8Bytes = encoder.encode(text);
+
+    // Convert each byte to a two-digit hexadecimal string and join them
+    const byteArray = Array.from(utf8Bytes);
+
+    const byteSize = 255;
+    let acc = 0;
+    Object.keys(params).forEach((p, i) => {
+        const { type, transform = (x) => x, val } = params[p];
+
+        let byteVal = byteArray[i % byteArray.length];
+        acc += byteVal;
+        byteVal = [byteVal + acc] % byteSize;
+
+        if (type === SELECTION) {
+            pat = pat[p](transform(val[byteVal % val.length]));
+        } else {
+            const min = val.at(0);
+            const max = val.at(-1);
+            const pTotal = max - min;
+            const valAdjusted = (pTotal / byteSize) * byteVal + min;
+
+            pat = pat[p](transform(valAdjusted));
+        }
+    });
+
+    return pat;
+});
+
+/* Oldschool timestretching function
+@example
+$: s("brk").sf(2)
+*/
+
+Pattern.prototype.sf = function (cycles, segments = 16) {
+    cycles = reify(cycles);
+    return this.scrub(saw.seg(cycles.mul(segments)))
+        .slow(cycles)
+        .sustain(1);
+};
+
+register("octave", (oct, pat) => {
+    const transp = (oct - 3) * 12;
+    return pat.transpose(transp);
+});
+
+window.chordshapes = [
+    "0,4",
+    "0,2,4",
+    "0,4,7,9",
+    "0,2,8,9,11",
+    "0,2,7,8,11",
+    "0,2,4,6",
+    "0,4,6,9",
+    "0,4,7,9,13",
+    "0,2,4,6,8",
+    "0,4,8,9,13",
+];
+
+window.chrd = function (c) {
+    c = reify(c);
+    return c.outerBind((c) => {
+        const [degree, variation = 0] = [c].flat();
+        const chords = window.chordshapes[Math.min(variation, window.chordshapes.length - 1)];
+        return n(chords).add(n(degree));
+    });
+};
+
+//@example
+//$: chrd("<0:2!7 2:2!9 -2:2!16 0:7!7 2:7!9 -2:2!16>*8").sc().s("sawtooth")
+//.notearp("<0 3 2 <1 9> 5 6 7>*16")
+register(
+    "notearp",
+    (indices, pat) =>
+        pat.arpWith((haps) =>
+            reify(indices).fmap((i) => {
+                const transpose = Math.trunc(i / haps.length) * 12;
+                let hap = haps[i % haps.length];
+                return hap.withValue((v) => {
+                    let note = v.note ?? "C3";
+                    return { ...v, note: noteToMidi(note) + transpose };
+                });
+            }),
+        ),
+    false,
+);
+
+//n + defined scale
+Pattern.prototype.nsc = function (pat = 0, oct = 3) {
+    pat = reify(pat);
+    return this.set.out(pat.as("n").sc()).octave(oct);
+};
+
+/* swap one value with another
+@example
+ s("bd bd sd bd".fast(4).swap("bd", "<lt bd:3>").swap("sd", "hh sd:2"))
+ */
+register("swap", (find, rep, x) => {
+    return x.withValue((v) => {
+        if (v === find) {
+            return rep;
+        }
+        return v;
+    });
+});
+
+/*
+@example
+$: s("piano").over(
+  n("<0 3 2 1 5>*8"),
+  n("<-5 -2 -3 -4 0>*2")
+).scale("g:major:pentatonic")
+*/
+Pattern.prototype.over = function (...inp) {
+    return this.set.out(stack(...inp));
+};
+
+Pattern.prototype.overin = function (...inp) {
+    return this.set.in(stack(...inp));
+};
+
+window.sb = register("sb", (p, cb, pat) => {
+    return pat.sometimesBy(p, cb);
+});
+
+window.SCALE = "e:minor";
+
+window.setScale = (sc) => {
+    window.SCALE = sc;
+};
+
+// apply the scale state
+Pattern.prototype.sc = function (mode) {
+    let scale = reify(window.SCALE);
+    if (mode != null) {
+        mode = reify(mode);
+        scale = scale.innerBind(([root]) => {
+            return mode.withValue((m) => {
+                return [root, m];
+            });
+        });
+    }
+    return this.scale(scale);
+};
+
+register("ifit", (cycles, pat) => {
+    return pat.inside(cycles, fit).slow(cycles).clip(1);
+});
+
+// Easy arpeggiating
+/*
+@example
+$: n(trancearp("<0:2:6@3 2:4:8>", "F@5 B@3", "<1 1 1@2 1 1@2 1>*16"))
+  .acidenv(trancearp(".4:.5:.7", "F B", "<1!3 1@3 1!2>*16"))
+  .scale("g:minor").delay(.6)≥
+  .s("sawtooth")
+*/
+window.trancearp = function (notes, rst = 0, rytm = 0) {
+    const rstPresets = ["F", "B", "<F@3 F@3 F@3 F@3 F@2 F@2>*16", "F B F B", "F@3 B@3 F F", "F@12 F@2 F@2"];
+    const rytmPresets = ["x!16", "<1 1 _ 1 1 1 1 1>*16", "<1 1@2 1 1@2 1 1@2 1 1@2 1 1 1 1>*16"];
+
+    if (typeof rst == "number") {
+        rst = pickmod(rstPresets, rst);
+    }
+    if (typeof rytm == "number") {
+        rytm = pickmod(rytmPresets, rytm);
+    }
+    const pats = {
+        F: "<0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15>*16",
+        B: "<15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0>*16",
+        // F: saw.mod(16).mul(16),
+        // B: isaw.mod(16).mul(16),
+    };
+
+    return pickmod(notes, pickRestart(pats, rst)).struct(rytm);
+    // .restart(rst)
+};
+
+//FX
+
+window._comb = register("comb", (inp, pat) => {
+    let [delay, feedback = 0.6] = [inp].flat();
+    delay = reify(delay).div(100);
+
+    return pat
+        .FX(
+            K(() => {
+                const d = S(delay);
+                const q = S(feedback);
+                return audioin()
+                    .add((x) => x.delay(d).mul(q))
+                    .add((x) => x.delay(2 * d).mul(q * q))
+                    .add((x) => x.delay(3 * d).mul(q * q * q))
+                    .add((x) => x.delay(4 * d).mul(q * q * q * q))
+                    .out();
+            }),
+        )
+        .fxr(1);
+});
+
+// SOUNDS
+
+registerFunc("noisehat", (seg = 16, modu = tri, speed = 4, min = 0.05, max = 0.12) =>
+    s("white").seg(seg).dec(modu.fast(4).range(min, max)),
+);
+registerFunc("zap", (amount = 0.8, speed = 0.1, note = "c3") =>
+    s("sine").penv(reify(amount).mul(120)).note(note).pdec(speed).dec(speed).o(8),
+);
+window.roller = (wt = 0) =>
+    s("wt_digi")
+        .wt(wt)
+        .wtenv(0)
+        .wtdecay(0.2)
+        .warp(0)
+        .warpmode(7)
+        .warpenv(0.5)
+        .warpdec(0.1)
+        .dec(0.2)
+        .lpq(0)
+        .dly(0.8)
+        .room(0.7)
+        .roomsize(4)
+        .diode("1")
+        .acidenv(0.44);
+
+//THANKS GLOSSING
+window.spinor = (alive = 1, dead = 0) =>
+    s("wt_digital")
+        .lfo({ dr: 0.05 })
+        .wtrate(alive)
+        .unison(3)
+        .detune(alive)
+        .compressor(-20)
+        .fm(dead)
+        .fmh(4)
+        .FX(
+            lpf(200)
+                .lpe(4)
+                .lpa(0.5)
+                .lps(1)
+                .K(() => {
+                    audioin()
+                        .sub((x) => x.bpf(sine(0.13).mul(S(rand))))
+                        .out();
+                })
+                .asym("0.3".mul(dead)),
+            diode(0.7),
+            gain(0.3),
+        )
+        .fxr(1);
+
+window.roller2 = (acidenv = 0.5) => {
+    return s("bstab:1:.6,supersaw:1:.6,white:0:.3")
+        .detune(rand)
+        .begin("<0 .02>/4")
+        .room(0.5)
+        .acidenv(acidenv)
+        .lpq(0)
+        .postgain(1.2)
+        .diode([2.5, 0.6])
+        .sustain(0.45)
+        .dec(0.2);
+};
+
+//Custom UI Elements
+
+window.UISlider = function (cb, id, initVal = 0.5, containerStyle = {}) {
+    let sliderContainer = document.getElementById(id);
+    if (sliderContainer) {
+        sliderContainer.remove();
+    }
+    sliderContainer = document.createElement("div");
+    sliderContainer.id = id;
+
+    sliderContainer.className = "right-0 bg-lineHighlight border border-muted";
+    Object.assign(sliderContainer.style, {
+        position: "fixed",
+        bottom: "40px",
+        zIndex: "9999",
+        padding: "2px 8px",
+
+        display: "flex",
+        flexDirection: "column",
+        gap: "5px",
+        ...containerStyle,
+    });
+
+    const label = document.createElement("label");
+    label.innerText = id + ": " + initVal;
+
+    label.className = "text-foreground font-mono";
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = 0;
+    slider.max = 1;
+    slider.step = 0.01;
+    slider.value = initVal;
+    slider.style.cursor = "pointer";
+
+    slider.addEventListener("input", (e) => {
+        const value = parseFloat(e.target.value);
+        label.innerText = id + ": " + value;
+        cb(value, e);
+    });
+
+    sliderContainer.appendChild(label);
+    sliderContainer.appendChild(slider);
+    document.body.appendChild(sliderContainer);
+};
+
+window.UISlider(
+    (v, e) => {
+        const controller = getSuperdoughAudioController();
+        const nodes = controller.nodes;
+        Array.from(Object.values(nodes)).forEach((node) => {
+            node.getDjf?.(v);
+        });
+    },
+    "djfilt",
+    0.5,
+    { right: "144px" },
+);
+
+window.UISlider(
+    (v, e) => {
+        const controller = getSuperdoughAudioController();
+        const nodes = controller.nodes;
+        Array.from(Object.values(nodes)).forEach((node) => {
+            node.summingNode.gain.setValueAtTime(v, 0);
+        });
+    },
+    "Volume",
+    0.8,
+);
+
+// GLOSSING FUNCTIONS <3 these are pulled from Glossing's repo:
+// https://codeberg.org/glossing/Strudel_Scripts
+
+/* Similar to set.mix but won't write over values that `vals` does not contain.
+  This lets you do things like
+
+  $: s("bd").n(5).room(0.1).rlp(1800).up(`<
+    1 0.5 ~ 0.7:4
+    1 0.5 ~ ~
+    1 0.5 ~ [0.4:4 0.6:4]
+    1 0.5 1:22:sd:1 ~
+  >*8`.as("velocity:n:s:room"))
+
+  to do Elektron-style parameter locks ++ set the rhythm of an element (similar to `struct`)
+  at the same time
+*/
+window.up = register(
+    "up",
+    (vals, pat) =>
+        pat
+            .withValue((v) => (vNew) => {
+                const vUp = Object.fromEntries(Object.entries(vNew).filter(([_, val]) => val !== undefined));
+                return { ...v, ...vUp };
+            })
+            .appBoth(vals),
+    false,
+);
+
+/* Plays a sound once (when the REPL is updated) but locked to a provided grid/quantize
+
+So doing
+
+s("downlifter").oneshot(4)
+
+will play it, but only at the next 4-divisible cycle (t = 0, 4, 8, etc)
+Useful for locking it into relevant parts of the arrangement
+
+*/
+register("oneshot", (grid, pat) => {
+    const t = getTime();
+    const qt = Math.ceil(t / grid) * grid;
+    return pat.filterWhen((t) => t >= qt && t < qt + 1);
+});
+
+/* Executes a function when a specific control key matches a specific value. For example
+
+$: s("bd hh sd hh").filtval("s", "bd", x => x.duck(2))
+
+To only have the kicks trigger the sidechain
+
+*/
+register("filtval", (key, val, func, pat) => {
+    return pat.when(
+        pat.fmap((v) => v[key] === val),
+        func,
+    );
+});
+
+/* Polyphonic non-legato glide
+
+This also has the nice feature of glide persisting across notes, so if you have a very long glide
+it'll actually slowly drift between those targets rather than starting its glide over on
+every new note
+
+*/
+register(
+    "glide",
+    (time, pat) => {
+        let curr = [],
+            prev = [],
+            lastT = null;
+        const query = (state) => {
+            const trig = !!state.controls._cps; // an actual trigger as opposed to lookahead
+            const haps = pat.query(state);
+            const output = [];
+            haps.map((hap) => {
+                const { value, whole } = hap;
+                const t = Number(whole.begin);
+                if (trig && (lastT == null || lastT !== t)) {
+                    prev = curr;
+                    curr = [];
+                    lastT = t;
+                }
+                const glideHaps = time.query(state.setSpan(hap.wholeOrPart()));
+                glideHaps.map((glideHap) => {
+                    const part = hap.part.intersection(glideHap.part);
+                    if (!part) return;
+                    const context = hap.combineContext(glideHap);
+                    const glideT = glideHap.value;
+                    const freqF = getFrequencyFromValue(value, value.s === "sbd" ? 29 : 36); // target
+                    const freqI = prev.length
+                        ? prev.reduce((closest, v) => {
+                              const phase = glideT > 0 ? Math.min((t - v.t) / glideT, 1) : 1;
+                              const cand = v.freqI + phase * (v.freqF - v.freqI);
+                              if (closest == null) return cand;
+                              return Math.abs(cand - freqF) < Math.abs(closest - freqF) ? cand : closest;
+                          }, null)
+                        : freqF;
+                    if (trig) {
+                        curr.push({ freqI, freqF, t });
+                    }
+                    let newVal = value;
+                    if (Math.abs(freqF - freqI) > 1e-6) {
+                        newVal = {
+                            ...value,
+                            panchor: 0,
+                            psustain: 0,
+                            pattack: 0,
+                            pdecay: glideT,
+                            penv: -12 * Math.log2(freqF / freqI),
+                        };
+                    }
+                    output.push(new Hap(whole, part, newVal, context));
+                });
+            });
+            return output;
+        };
+        return new Pattern(query);
+    },
+    false,
+);
+
+/* Try all(x => x.glitch(rand)) to absolutely destroy your patterns :p <3
+
+Fun to trigger at the end of bars for weird glitchy fills
+
+*/
+register("glitch", (amt, pat) => {
+    return pat.fmap((v) => {
+        const keys = Object.keys(v);
+        const numKeys = keys.length;
+        for (let i = 0; i < numKeys; i++) {
+            const k = keys[i];
+            if (["orbit", "duckorbit"].includes(k)) continue;
+            const rand = 2 * Math.random() - 1;
+            const val = v[k];
+            const isNumber = typeof val === "number";
+            if (k === "note" && !isNumber) {
+                const midi = noteToMidi(val);
+                v[k] = Math.round(Math.max(midi * (1 + amt * 0.5 * Math.random()), 24));
+            } else if (isNumber) {
+                v[k] *= 1 + rand * amt;
+            }
+        }
+        return v;
+    });
+});
+
+/* Square ⬜️. Useful for making knobs / sliders feel smoother
+ */
+register("sq", (pat) => pat.fmap((v) => v * v));
+
+/* Strums chords
+
+$: s("gm_slap_bass_2")
+  .note("a1,c2,e3,g4").clip(0.125).decay(0.2).delay(0.3)
+  .strum(slider(0.0849, 0, 0.1))._pianoroll()
+
+*/
+register("strum", (amt, pat) => {
+    return pat.collect().withHaps((haps) => {
+        return flatten(
+            haps.map((hap) => {
+                const collected = hap.value;
+                if (collected.length <= 1) {
+                    return group;
+                }
+                const l = collected.length - 1;
+                return collected.map((hap, idx) => {
+                    const offset = amt * ((2 * idx) / l - 1);
+                    return hap.withSpan((span) => span.withTime((t) => t + offset));
+                });
+            }),
+        );
+    });
+});
+
+/* Moves hits off the grid and adds velocity variation
+
+$: s("bd hh sd hh").humanize(slider(0.0328, 0, 1))
+  .bank("tr909")
+  ._pianoroll()
+metronome: s("hh*8").n(9).dec(0.3)
+
+*/
+register("humanize", (amt, pat) => {
+    const amtC = clamp(amt, 0, 1);
+    return pat
+        .withHaps((haps) => {
+            return haps.map((hap) => {
+                const offset = 0.1 * amtC * (2 * Math.random() - 1);
+                return hap.withSpan((span) => span.withTime((t) => t + offset));
+            });
+        })
+        .withValue((v) => ({ ...v, velocity: (v.velocity ?? 1) + 0.5 * amtC * (2 * Math.random() - 1) }));
+});
+
+/* Pitchbend your sounds! Importantly, the bending (`bends`) pattern can have events
+occurring _between_ events of the main pattern, which distinguishes it from the normal
+pitch bend (`penv`).
+
+@example
+$: s("supersaw").detune(0.4).room(0.4).note("F1")
+  .bend("<0 2 12@2 24 0 7 36>*16", "0 0.3", "0.3 0")
+*/
+const __semitoneBend = Math.pow(2, 1 / 12);
+Pattern.prototype.bend = function (bends = 0, speedUp = 0.05, speedDown = 0.05) {
+    window.__legatoBusID ??= 0;
+    const uuid = window.__legatoBusID++;
+    bends = reify(bends);
+    speedUp = reify(speedUp);
+    speedDown = reify(speedDown);
+    // Create the bending pattern and make it play by tagging it with `p`
+    bends
+        .fmap((b) => (su) => (sd) => ({
+            s: "one",
+            attack: su,
+            release: sd,
+            bus: uuid,
+            sustain: 1,
+            dry: 0,
+            gain: __semitoneBend ** b - 1,
+            dc: 0,
+        }))
+        .appBoth(speedUp)
+        .appBoth(speedDown)
+        .p("bend_" + uuid);
+    // Modulate the original pattern
+    return this.bmod({ c: "s", b: uuid, dr: 1 });
+};
