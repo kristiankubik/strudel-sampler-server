@@ -773,8 +773,8 @@ register("swap", (find, rep, x) => {
 /*
 @example
 $: s("piano").over(
-  n("<0 3 2 1 5>*8"),
-  n("<-5 -2 -3 -4 0>*2")
+    n("<0 3 2 1 5>*8"),
+    n("<-5 -2 -3 -4 0>*2")
 ).scale("g:major:pentatonic")
 */
 Pattern.prototype.over = function (...inp) {
@@ -817,9 +817,9 @@ register("ifit", (cycles, pat) => {
 /*
 @example
 $: n(trancearp("<0:2:6@3 2:4:8>", "F@5 B@3", "<1 1 1@2 1 1@2 1>*16"))
-  .acidenv(trancearp(".4:.5:.7", "F B", "<1!3 1@3 1!2>*16"))
-  .scale("g:minor").delay(.6)≥
-  .s("sawtooth")
+    .acidenv(trancearp(".4:.5:.7", "F B", "<1!3 1@3 1!2>*16"))
+    .scale("g:minor").delay(.6)≥
+    .s("sawtooth")
 */
 window.trancearp = function (notes, rst = 0, rytm = 0) {
     const rstPresets = ["F", "B", "<F@3 F@3 F@3 F@3 F@2 F@2>*16", "F B F B", "F@3 B@3 F F", "F@12 F@2 F@2"];
@@ -1004,17 +1004,17 @@ window.UISlider(
 // https://codeberg.org/glossing/Strudel_Scripts
 
 /* Similar to set.mix but won't write over values that `vals` does not contain.
-  This lets you do things like
+    This lets you do things like
 
-  $: s("bd").n(5).room(0.1).rlp(1800).up(`<
+    $: s("bd").n(5).room(0.1).rlp(1800).up(`<
     1 0.5 ~ 0.7:4
     1 0.5 ~ ~
     1 0.5 ~ [0.4:4 0.6:4]
     1 0.5 1:22:sd:1 ~
-  >*8`.as("velocity:n:s:room"))
+    >*8`.as("velocity:n:s:room"))
 
-  to do Elektron-style parameter locks ++ set the rhythm of an element (similar to `struct`)
-  at the same time
+    to do Elektron-style parameter locks ++ set the rhythm of an element (similar to `struct`)
+    at the same time
 */
 window.up = register(
     "up",
@@ -1155,8 +1155,8 @@ register("sq", (pat) => pat.fmap((v) => v * v));
 /* Strums chords
 
 $: s("gm_slap_bass_2")
-  .note("a1,c2,e3,g4").clip(0.125).decay(0.2).delay(0.3)
-  .strum(slider(0.0849, 0, 0.1))._pianoroll()
+    .note("a1,c2,e3,g4").clip(0.125).decay(0.2).delay(0.3)
+    .strum(slider(0.0849, 0, 0.1))._pianoroll()
 
 */
 register("strum", (amt, pat) => {
@@ -1180,8 +1180,8 @@ register("strum", (amt, pat) => {
 /* Moves hits off the grid and adds velocity variation
 
 $: s("bd hh sd hh").humanize(slider(0.0328, 0, 1))
-  .bank("tr909")
-  ._pianoroll()
+    .bank("tr909")
+    ._pianoroll()
 metronome: s("hh*8").n(9).dec(0.3)
 
 */
@@ -1203,7 +1203,7 @@ pitch bend (`penv`).
 
 @example
 $: s("supersaw").detune(0.4).room(0.4).note("F1")
-  .bend("<0 2 12@2 24 0 7 36>*16", "0 0.3", "0.3 0")
+    .bend("<0 2 12@2 24 0 7 36>*16", "0 0.3", "0.3 0")
 */
 const __semitoneBend = Math.pow(2, 1 / 12);
 Pattern.prototype.bend = function (bends = 0, speedUp = 0.05, speedDown = 0.05) {
