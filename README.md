@@ -24,10 +24,10 @@ env file variables:
         └── samples/
             ├── <Cym>/
             │   └── audio-file
-            └── <drumkit_name>/
+            ├── <drumkit_name>/
             │   └── <Perc>/
             │       └── audio-file
-            └── prebake.js - here to keep the per-track prebake
+            ├── prebake.js - here to keep the per-track prebake
             └── strudel.js - here to keep the track
 ```
 
