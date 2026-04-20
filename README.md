@@ -12,13 +12,13 @@ env file variables:
 
 ```
 <root>/
+├── prebake.js - here to keep the global prebake
 ├── samples/
 │   ├── <Cym>/
 │   │   └── audio-file
 │   └── <drumkit_name>/
-│   │   └── <Perc>/
-│   │       └── audio-file
-│   └── prebake.js - here to keep the global prebake
+│       └── <Perc>/
+│           └── audio-file
 └── tracks/
     └── <track-name>/
         └── samples/
