@@ -21,14 +21,15 @@ env file variables:
 │           └── audio-file
 └── tracks/
     └── <track-name>/
+        ├── prebake.js - here to keep the per-track prebake
+        ├── strudel.js - here to keep the track
         └── samples/
             ├── <Cym>/
             │   └── audio-file
-            ├── <drumkit_name>/
-            │   └── <Perc>/
-            │       └── audio-file
-            ├── prebake.js - here to keep the per-track prebake
-            └── strudel.js - here to keep the track
+            └── <drumkit_name>/
+                └── <Perc>/
+                    └── audio-file
+
 ```
 
 ## available endpoints
